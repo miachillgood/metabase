@@ -185,8 +185,12 @@
         ;; cards referenced by dashboards live outside the target collections.
         {:keys [reportable-escaped analytics-card-ids]} (when has-content?
                                                           (escape-analysis by-model nodes))]
-    (if (seq reportable-escaped)
-      (log-escape-report! reportable-escaped)
+    (when (seq reportable-escaped)
+      (log-escape-report! reportable-escaped))
+    ;; Escaped cards live outside the requested collections. By default this aborts the whole export;
+    ;; with continue-on-error we log the report (above) and export everything else instead.
+    (when (or (empty? reportable-escaped)
+              (:continue-on-error opts))
       (let [coll-set        (get by-model "Collection")
             ;; When targets are specified, also include Tables found via descendants
             ;; (published tables in target collections). These are extracted by ID, not all.
@@ -198,7 +202,14 @@
                               ;; Remove analytics cards from extraction - they have stable entity_ids across instances
                               ;; so cards that reference them can still be exported and imported correctly
                               (and analytics-card-ids (contains? by-model "Card"))
-                              (update "Card" (fn [ids] (vec (remove analytics-card-ids ids)))))
+                              (update "Card" (fn [ids] (vec (remove analytics-card-ids ids))))
+                              ;; When continuing past escape analysis, drop the escaped cards too so we don't
+                              ;; pull them in from outside the requested collections. Dashboards that reference
+                              ;; them are still exported (the dangling ref is handled on import).
+                              (and (seq reportable-escaped) (contains? by-model "Card"))
+                              (update "Card" (fn [ids]
+                                               (let [escaped (into #{} (map (comp :id :escapee)) reportable-escaped)]
+                                                 (vec (remove escaped ids))))))
             extract-by-ids  (fn [[model ids]]
                               (serdes/extract-all model (merge opts {:collection-set coll-set
                                                                      :where          [:in :id ids]})))

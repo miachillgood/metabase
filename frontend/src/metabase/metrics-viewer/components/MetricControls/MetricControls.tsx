@@ -124,6 +124,30 @@ export function MetricControls({
   const hasCenterControls =
     hasFilterControls || hasBucketControls || hasBinningControls;
 
+  if (dimensionBreakoutType === "scalar") {
+    return (
+      <Box className={S.root} data-testid="metrics-viewer-controls">
+        <Flex className={S.centerCluster}>
+          <Flex className={S.centerControls} align="center">
+            <ControlSection>
+              <Button
+                className={S.controlButton}
+                fw="bold"
+                aria-label={t`No breakout`}
+                variant="subtle"
+                color="text-primary"
+                leftSection={<Icon c="brand" name="unreferenced" size={16} />}
+                onClick={openDimensionPickerSidebar}
+              >
+                {t`No breakout`}
+              </Button>
+            </ControlSection>
+          </Flex>
+        </Flex>
+      </Box>
+    );
+  }
+
   return (
     <Box className={S.root} data-testid="metrics-viewer-controls">
       <Flex className={S.leftControls} align="center" gap="md">
@@ -144,7 +168,7 @@ export function MetricControls({
         )}
       </Flex>
       {(hasCenterControls || canToggleColumnLabels) && (
-        <Flex className={S.centerCluster} align="center" gap="sm">
+        <Box className={S.centerCluster}>
           {hasCenterControls && (
             <Flex className={S.centerControls} align="center">
               {hasFilterControls && projectionInfo.filterDimension && (
@@ -206,7 +230,7 @@ export function MetricControls({
             <Menu position="bottom-start" withinPortal>
               <Menu.Target>
                 <ActionIcon
-                  className={S.optionsButton}
+                  className={S.ellipsisMenuButton}
                   aria-label={t`Column label options`}
                   variant="subtle"
                 >
@@ -226,7 +250,7 @@ export function MetricControls({
               </Menu.Dropdown>
             </Menu>
           )}
-        </Flex>
+        </Box>
       )}
     </Box>
   );

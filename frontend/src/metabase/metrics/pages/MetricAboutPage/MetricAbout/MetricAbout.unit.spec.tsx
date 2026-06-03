@@ -27,6 +27,22 @@ import {
 
 import { MetricAbout } from "./MetricAbout";
 
+// Mock the two chart branches so we can assert which one is chosen purely from
+// the metric's result columns, without rendering the underlying visualization.
+jest.mock("./AboutVisualization", () => ({
+  AboutVisualization: () => <div data-testid="about-visualization" />,
+}));
+
+jest.mock(
+  "metabase/data-studio/common/components/OverviewVisualization",
+  () => ({
+    MetricCardVisualization: () => (
+      <div data-testid="metric-card-visualization" />
+    ),
+    OverviewVisualization: () => <div data-testid="overview-visualization" />,
+  }),
+);
+
 const SAMPLE_DB = createSampleDatabase();
 
 const mockUrls = {
@@ -112,5 +128,79 @@ describe("MetricAbout", () => {
     // isn't trivially true (the page hasn't loaded yet).
     expect(await screen.findByText("Source")).toBeInTheDocument();
     expect(screen.queryByTestId("explore-link")).not.toBeInTheDocument();
+  });
+
+  describe("value + change-over-time preview", () => {
+    it("shows the time-series treatment when results are a (date, value) series", async () => {
+      setup(
+        makeMetricCard([
+          createMockField({ name: "created_at", base_type: "type/DateTime" }),
+          createMockField({ name: "count", base_type: "type/Integer" }),
+        ]),
+      );
+
+      expect(
+        await screen.findByTestId("about-visualization"),
+      ).toBeInTheDocument();
+      expect(
+        screen.queryByTestId("metric-card-visualization"),
+      ).not.toBeInTheDocument();
+    });
+
+    it("uses the bare chart card for a scalar metric with no date column", async () => {
+      setup(
+        makeMetricCard([
+          createMockField({ name: "count", base_type: "type/Integer" }),
+        ]),
+      );
+
+      expect(
+        await screen.findByTestId("metric-card-visualization"),
+      ).toBeInTheDocument();
+      expect(
+        screen.queryByTestId("about-visualization"),
+      ).not.toBeInTheDocument();
+    });
+
+    it("uses the bare chart card when broken out by a non-temporal dimension", async () => {
+      setup(
+        makeMetricCard([
+          createMockField({
+            name: "category",
+            base_type: "type/Text",
+            semantic_type: "type/Category",
+          }),
+          createMockField({ name: "count", base_type: "type/Integer" }),
+        ]),
+      );
+
+      expect(
+        await screen.findByTestId("metric-card-visualization"),
+      ).toBeInTheDocument();
+      expect(
+        screen.queryByTestId("about-visualization"),
+      ).not.toBeInTheDocument();
+    });
+
+    it("uses the bare chart card for a multi-breakout series where the value is not the second column", async () => {
+      setup(
+        makeMetricCard([
+          createMockField({ name: "created_at", base_type: "type/DateTime" }),
+          createMockField({
+            name: "category",
+            base_type: "type/Text",
+            semantic_type: "type/Category",
+          }),
+          createMockField({ name: "count", base_type: "type/Integer" }),
+        ]),
+      );
+
+      expect(
+        await screen.findByTestId("metric-card-visualization"),
+      ).toBeInTheDocument();
+      expect(
+        screen.queryByTestId("about-visualization"),
+      ).not.toBeInTheDocument();
+    });
   });
 });

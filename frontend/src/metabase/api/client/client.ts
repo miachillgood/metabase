@@ -223,33 +223,61 @@ export class ApiClient extends EventEmitter<EventMap> {
       throw new Error("API bodies must be plain objects, not arrays");
     }
 
+    const bodyIsRaw =
+      options.body instanceof FormData ||
+      options.body instanceof URLSearchParams;
+
+    // Expose the body to the middleware pipeline (merged under `params`, which
+    // win on key clashes) so embed URL `:tag` tokens — notably the `:token` on
+    // the guest-embed card-query rewrite — can be substituted from fields that
+    // morally live in the body. `FormData`/`URLSearchParams` can't be merged,
+    // so they pass through untouched. URL-tag substitution deletes the keys it
+    // consumes; we track which keys came from `params` to route the leftovers
+    // back to the right channel afterwards.
+    const paramKeys = new Set(Object.keys(options.params ?? {}));
+    const middlewareData = bodyIsRaw
+      ? { ...options.params }
+      : {
+          ...(options.body as Record<string, unknown> | undefined),
+          ...options.params,
+        };
+
     const { url, method, data, headers } = await this._resolveOptions({
       url: options.url,
       method: options.method,
       headers: options.headers,
-      data: options.params ?? {},
+      data: middlewareData,
     });
 
     let body: BodyInit | undefined = undefined;
 
-    // Leftover params (post URL-tag substitution) always go to the querystring.
-    appendQueryParameters(url, data);
-
     if (method === "GET") {
-      // GET cannot carry a body: fold body into the querystring.
-      const bodyParams = (options.body ?? {}) as Record<string, unknown>;
-      appendQueryParameters(url, bodyParams);
-    } else if (
-      options.body instanceof FormData ||
-      options.body instanceof URLSearchParams
-    ) {
-      body = options.body;
+      // GET cannot carry a body: everything left after `:tag` substitution —
+      // leftover params and body fields alike — folds into the querystring.
+      appendQueryParameters(url, data);
+    } else if (bodyIsRaw) {
+      // Leftover params (post `:tag` substitution) go to the querystring; the
+      // raw body passes through as-is.
+      appendQueryParameters(url, data);
+      body = options.body as BodyInit;
 
       // Let the browser set Content-Type with the multipart boundary
       // (FormData) or urlencoded charset (URLSearchParams).
       delete headers["Content-Type"];
-    } else if (options.body !== undefined) {
-      body = JSON.stringify(options.body);
+    } else {
+      // Split the leftovers back into their channels: keys that came from
+      // `params` go to the querystring, the rest form the JSON body. Keys the
+      // URL template consumed (e.g. an embed `:token` lifted from the body) are
+      // already gone from `data`, so they land in neither.
+      const queryLeftover: Record<string, unknown> = {};
+      const bodyLeftover: Record<string, unknown> = {};
+      for (const key of Object.keys(data)) {
+        (paramKeys.has(key) ? queryLeftover : bodyLeftover)[key] = data[key];
+      }
+      appendQueryParameters(url, queryLeftover);
+      if (options.body !== undefined) {
+        body = JSON.stringify(bodyLeftover);
+      }
     }
 
     return { ...options, url, method, headers, body };
